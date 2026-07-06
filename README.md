@@ -83,7 +83,7 @@ blocking (`reqwest-blocking-client`), so both work from a plain synchronous
 | Env var | Purpose | Default |
 |---|---|---|
 | `HA_SERVICE_NAME` | Service name resource attribute | `otel-sdk` |
-| `HA_REPORTING_ENDPOINT` | OTLP collector endpoint | `http://localhost:5442` |
+| `HA_REPORTING_ENDPOINT` | OTLP collector endpoint (a bare host is fine — `v1/traces` is appended automatically for `otlp_http` if missing) | `http://localhost:5442` |
 | `HA_REPORTING_TOKEN` | Auth token (`x-harness-service-token` header) | none |
 | `HA_REPORTING_PROTOCOL` | `otlp_http` \| `otlp_grpc` | `otlp_http` |
 | `HA_REPORTING_COMPRESSION` | `none` \| `gzip` | `none` |

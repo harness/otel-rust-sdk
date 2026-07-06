@@ -171,7 +171,15 @@ let exporter = SpanExporter::builder()
 
 ### Endpoint Normalization
 
-If the endpoint does not end with `/v1/traces`, the OTLP HTTP exporter appends it automatically (standard behavior, matches Python SDK).
+If the endpoint does not already contain `v1/traces`, the SDK appends it before
+handing the endpoint to the exporter. This is done explicitly by this crate
+(`normalize_http_traces_endpoint` in `src/exporter.rs`), not by
+`opentelemetry-otlp` itself — that crate only auto-appends the path when an
+endpoint is picked up from the `OTEL_EXPORTER_OTLP_ENDPOINT` env-var fallback;
+an endpoint supplied programmatically via `.with_endpoint()` (which is what
+this SDK always does) is used verbatim. Mirrors the Python SDK's
+`normalize_otlp_http_traces_endpoint`, so a bare host configured the same way
+in both SDKs behaves the same way.
 
 ### gRPC Alternative
 
@@ -359,7 +367,7 @@ by construction, not by picking one of `rt::Tokio`/`rt::Smol`.
 | Protocol | OTLP HTTP/protobuf | OTLP HTTP/protobuf | Custom OTLP-JSON |
 | Exporter | Standard `OTLPHttpSpanExporter` | Standard `opentelemetry-otlp` | Hand-rolled `HarnessSpanExporter` |
 | Resource attrs | service.name, sdk.name/version/language | Same | service.name + org_id/project_id (non-standard) |
-| Endpoint normalization | Auto-append `/v1/traces` | Auto (standard behavior) | Manual |
+| Endpoint normalization | Auto-append `v1/traces` (SDK-side, `normalize_otlp_http_traces_endpoint`) | Auto-append `v1/traces` (SDK-side, `normalize_http_traces_endpoint`) | Manual |
 | Compression | gzip (optional) | gzip (optional) | None |
 | TLS enforcement | Configurable (secure flag) | Default ON, must opt out | None |
 | Account/org derivation | Backend-side from token | Backend-side from token | Client-side (non-standard) |
