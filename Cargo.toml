@@ -1,0 +1,22 @@
+[package]
+name = "harness-otel-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Harness OTel SDK for Rust — ships telemetry to the Harness OTel collector using the same wire contract as the Python/JS SDKs"
+license = "Apache-2.0"
+repository = "https://github.com/harness/otel-rust-sdk"
+
+[dependencies]
+opentelemetry = "0.32"
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "grpc-tonic", "reqwest-client"] }
+tonic = { version = "0.14", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
