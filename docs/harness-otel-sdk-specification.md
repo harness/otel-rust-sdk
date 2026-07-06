@@ -304,17 +304,21 @@ harness-otel-sdk/
 ```toml
 [dependencies]
 opentelemetry = "0.32"
-opentelemetry_sdk = { version = "0.32", features = ["trace", "rt-smol"] }
-opentelemetry-otlp = { version = "0.32", features = ["http-proto", "grpc-tonic"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "grpc-tonic", "reqwest-blocking-client"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 
-# Added later, only when the `control` feature is implemented (see "Control
-# Plane" section) — an HTTP or gRPC client for policy fetch, gated so
-# telemetry-only consumers never pull it in:
-# [features]
-# control = ["dep:<http-client-crate>"]
+[features]
+control = ["dep:ureq", "dep:serde_json"] # implemented — see src/control.rs
 ```
+
+The exporter deliberately uses `reqwest-blocking-client`, not the async
+`reqwest-client`: the blocking client needs no runtime at all, so both
+`Batching::Batch` and `Batching::Simple` (see Public API) work from a plain
+synchronous `fn main()` — no `tokio`/`smol` setup required by the SDK or the
+consumer. This resolves Open Question 2 below: the SDK is runtime-agnostic
+by construction, not by picking one of `rt::Tokio`/`rt::Smol`.
 
 ---
 
@@ -365,7 +369,7 @@ serde_yaml = "0.9"
 ## Open Questions
 
 1. **Separate repo or workspace crate?** If other Rust services at Harness will use this, separate repo (like the Python SDK). If only git-ai, workspace crate is simpler.
-2. **Async runtime**: Python SDK doesn't care (GIL). Rust needs a choice. git-ai uses `smol` — should the SDK be runtime-agnostic (use `opentelemetry_sdk::rt::Tokio` vs `rt::Smol`) or pick one?
+2. ~~**Async runtime**~~ — Resolved: the exporter uses `reqwest-blocking-client`, which needs no async runtime at all. Both `Batching::Batch` and `Batching::Simple` work from git-ai's plain synchronous `fn main()` (no `smol` setup needed for the SDK's own export path). `Batching::Simple` additionally guarantees synchronous, before-exit export for short-lived call sites like `PostCommit`.
 3. **Config file format**: Python uses YAML. Should Rust match (add `serde_yaml` dep) or use the existing `config.json` that git-ai already reads?
 4. **Legacy endpoint sunset date**: When can `DualWrite` and the legacy SEI POST path be removed?
 

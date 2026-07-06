@@ -9,7 +9,7 @@ repository = "https://github.com/harness/otel-rust-sdk"
 [dependencies]
 opentelemetry = "0.32"
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
-opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "grpc-tonic", "reqwest-client"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "grpc-tonic", "reqwest-blocking-client"] }
 tonic = { version = "0.14", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
@@ -18,9 +18,6 @@ serde_json = { version = "1", optional = true }
 
 [features]
 control = ["dep:ureq", "dep:serde_json"]
-
-[dev-dependencies]
-tokio = { version = "1", features = ["full"] }
 
 [[example]]
 name = "basic"

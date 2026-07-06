@@ -55,6 +55,29 @@ let otel = HarnessOtel::builder()
     .build()?;
 ```
 
+### Batching
+
+`with_batching()` chooses how spans are handed off to the exporter:
+
+```rust
+use harness_otel_sdk::Batching;
+
+let otel = HarnessOtel::builder()
+    .service_name("git-ai")
+    .with_batching(Batching::Simple) // synchronous, guaranteed-before-exit export
+    .build()?;
+```
+
+- `Batching::Batch` (default) buffers spans and exports them on a
+  background thread. Fits long-running processes.
+- `Batching::Simple` exports each span synchronously as it ends, with no
+  background thread. Fits short-lived processes (e.g. a one-shot CLI
+  invocation) that need every span flushed before exit.
+
+Neither variant requires an async runtime — the exporter's HTTP client is
+blocking (`reqwest-blocking-client`), so both work from a plain synchronous
+`fn main()`.
+
 ## Configuration
 
 | Env var | Purpose | Default |

@@ -27,6 +27,25 @@ use std::collections::HashMap;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::trace::{SdkTracerProvider, ShouldSample, SpanProcessor};
 
+/// How spans are handed off to the exporter.
+///
+/// Neither variant requires an async runtime — the exporter's HTTP client
+/// is blocking (`reqwest-blocking-client`), so both work from a plain
+/// synchronous `fn main()` with no Tokio setup.
+///
+/// - `Batch` (default) buffers spans and exports them on a background
+///   thread. Fits long-running processes that can tolerate spans being
+///   flushed some time after `span.end()`.
+/// - `Simple` exports each span synchronously as it ends, with no
+///   background thread. Fits short-lived processes (e.g. a one-shot CLI
+///   invocation) that need every span flushed before exit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Batching {
+    #[default]
+    Batch,
+    Simple,
+}
+
 /// A configured Harness OTel pipeline. Wraps an `SdkTracerProvider`.
 pub struct HarnessOtel {
     provider: SdkTracerProvider,
@@ -40,21 +59,24 @@ impl HarnessOtel {
     /// Build directly from environment variables / `HA_CONFIG_FILE`.
     pub fn from_config() -> Result<Self> {
         let config = Config::from_env()?;
-        Self::from_resolved_config(config, Vec::new(), None)
+        Self::from_resolved_config(config, Vec::new(), None, Batching::default())
     }
 
     fn from_resolved_config(
         config: Config,
         extra_processors: Vec<Box<dyn SpanProcessor>>,
         sampler: Option<Box<dyn ShouldSample>>,
+        batching: Batching,
     ) -> Result<Self> {
         config.validate()?;
         let resource = resource::build(&config.service_name(), &config.resource_attributes);
         let exporter = exporter::build(&config)?;
 
-        let mut builder = SdkTracerProvider::builder()
-            .with_resource(resource)
-            .with_batch_exporter(exporter);
+        let mut builder = SdkTracerProvider::builder().with_resource(resource);
+        builder = match batching {
+            Batching::Batch => builder.with_batch_exporter(exporter),
+            Batching::Simple => builder.with_simple_exporter(exporter),
+        };
 
         if !config.span_attributes.is_empty() {
             builder = builder.with_span_processor(processors::SpanAttributesProcessor::new(
@@ -101,6 +123,7 @@ pub struct HarnessOtelBuilder {
     span_attributes: HashMap<String, String>,
     span_processors: Vec<Box<dyn SpanProcessor>>,
     sampler: Option<Box<dyn ShouldSample>>,
+    batching: Batching,
 }
 
 impl HarnessOtelBuilder {
@@ -164,6 +187,14 @@ impl HarnessOtelBuilder {
         self
     }
 
+    /// Choose how spans are handed off to the exporter. Defaults to
+    /// `Batching::Batch`. Use `Batching::Simple` for short-lived processes
+    /// that need synchronous, guaranteed-before-exit export.
+    pub fn with_batching(mut self, batching: Batching) -> Self {
+        self.batching = batching;
+        self
+    }
+
     pub fn build(self) -> Result<HarnessOtel> {
         let config = Config {
             service_name: self.service_name,
@@ -179,7 +210,7 @@ impl HarnessOtelBuilder {
             resource_attributes: self.resource_attributes,
             span_attributes: self.span_attributes,
         };
-        HarnessOtel::from_resolved_config(config, self.span_processors, self.sampler)
+        HarnessOtel::from_resolved_config(config, self.span_processors, self.sampler, self.batching)
     }
 }
 
@@ -226,8 +257,8 @@ mod tests {
         fn set_resource(&mut self, _resource: &Resource) {}
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn consumer_supplied_span_processor_runs_on_span_end() {
+    #[test]
+    fn consumer_supplied_span_processor_runs_on_span_end() {
         let flag = Arc::new(AtomicBool::new(false));
         let otel = HarnessOtel::builder()
             .service_name("test")
@@ -243,6 +274,28 @@ mod tests {
         assert!(
             flag.load(Ordering::SeqCst),
             "custom span processor's on_end should have run"
+        );
+    }
+
+    #[test]
+    fn simple_batching_exports_synchronously_with_no_async_runtime() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let otel = HarnessOtel::builder()
+            .service_name("test")
+            .endpoint("http://localhost:5442")
+            .secure(false)
+            .with_batching(Batching::Simple)
+            .with_span_processor(FlagOnEnd(flag.clone()))
+            .build()
+            .expect("build should succeed with a valid local config");
+
+        let tracer = otel.tracer("test");
+        tracer.in_span("test-span", |_cx| {});
+
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "custom span processor's on_end should have run under Simple batching, \
+             with no Tokio runtime present"
         );
     }
 }
