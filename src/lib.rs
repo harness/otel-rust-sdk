@@ -102,6 +102,16 @@ impl HarnessOtel {
         self.provider.tracer(name)
     }
 
+    /// Flush pending spans without shutting down the pipeline. Useful for
+    /// short-lived batches within a longer-running process — e.g. flushing
+    /// after each emitted event so every HTTP export carries a bounded
+    /// number of spans.
+    pub fn force_flush(&self) -> Result<()> {
+        self.provider
+            .force_flush()
+            .map_err(|e| Error::ExporterBuild(e.to_string()))
+    }
+
     /// Flush and shut down the pipeline. Blocks until pending spans are
     /// exported or the shutdown timeout elapses.
     pub fn shutdown(self) -> Result<()> {
