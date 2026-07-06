@@ -33,6 +33,12 @@ pub struct ReportingConfig {
     /// Defaults to `true`. Set to `false` to explicitly allow a plaintext
     /// (`http://`) endpoint — e.g. talking to a local collector in dev.
     pub secure: Option<bool>,
+    /// Control-plane policy-fetch endpoint. Deliberately separate from
+    /// `endpoint` (telemetry) — policy fetch is not a tracing signal and
+    /// must not share the OTLP wire contract. Only used when the `control`
+    /// feature is enabled.
+    #[cfg(feature = "control")]
+    pub control_endpoint: Option<String>,
 }
 
 /// Fully resolved SDK configuration.
@@ -99,6 +105,10 @@ impl Config {
         if let Ok(v) = env::var("HA_REPORTING_SECURE") {
             self.reporting.secure = Some(v != "false" && v != "0");
         }
+        #[cfg(feature = "control")]
+        if let Ok(v) = env::var("HA_CONTROL_ENDPOINT") {
+            self.reporting.control_endpoint = Some(v);
+        }
     }
 
     pub fn service_name(&self) -> String {
@@ -112,6 +122,19 @@ impl Config {
             .endpoint
             .clone()
             .unwrap_or_else(|| DEFAULT_ENDPOINT.to_string())
+    }
+
+    /// Control-plane policy-fetch endpoint. Falls back to the telemetry
+    /// endpoint's default host if `HA_CONTROL_ENDPOINT` /
+    /// `reporting.control_endpoint` is not set — override explicitly in
+    /// any real deployment; the fallback exists only so local dev against
+    /// `localhost:5442` works without extra config.
+    #[cfg(feature = "control")]
+    pub fn control_endpoint(&self) -> String {
+        self.reporting
+            .control_endpoint
+            .clone()
+            .unwrap_or_else(|| format!("{}/v1/control/policy", DEFAULT_ENDPOINT))
     }
 
     /// Validate the resolved config. Mirrors the Python SDK's contract:

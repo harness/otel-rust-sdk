@@ -28,7 +28,7 @@ Single-crate library, no workspace. Five modules in `src/`:
   to the network.
 - `resource.rs` — builds the OTel `Resource` (service.name,
   telemetry.sdk.* attributes). No tenant/org attributes here — see
-  `docs/spec.md` for why.
+  `docs/harness-otel-sdk-specification.md` for why.
 - `processors.rs` — `SpanAttributesProcessor`, injects fixed key/value
   pairs into every span (only wired in when `span_attributes` is
   non-empty).
@@ -56,7 +56,7 @@ payload and POSTed it with `minreq`. That diverged from the Python/JS
 SDKs in wire format, auth, and resource attributes. This crate is the
 shared contract other Rust services (starting with `fork-gitai`) should
 depend on instead of re-implementing OTLP export. Full rationale and the
-`fork-gitai` migration plan: `docs/spec.md`.
+`fork-gitai` migration plan: `docs/harness-otel-sdk-specification.md`.
 
 ## Gotchas
 

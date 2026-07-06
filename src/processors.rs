@@ -49,3 +49,37 @@ impl SpanProcessor for SpanAttributesProcessor {
 
     fn set_resource(&mut self, _resource: &Resource) {}
 }
+
+/// Delegates to a boxed trait object so a `Vec<Box<dyn SpanProcessor>>`
+/// collected from consumer-supplied processors (via
+/// `HarnessOtelBuilder::with_span_processor`) can itself be registered with
+/// `TracerProviderBuilder::with_span_processor`, which requires `T:
+/// SpanProcessor` rather than accepting a trait object directly.
+#[derive(Debug)]
+pub(crate) struct BoxedSpanProcessor(pub Box<dyn SpanProcessor>);
+
+impl SpanProcessor for BoxedSpanProcessor {
+    fn on_start(&self, span: &mut opentelemetry_sdk::trace::Span, cx: &opentelemetry::Context) {
+        self.0.on_start(span, cx);
+    }
+
+    fn on_end(&self, span: SpanData) {
+        self.0.on_end(span);
+    }
+
+    fn force_flush(&self) -> OTelSdkResult {
+        self.0.force_flush()
+    }
+
+    fn shutdown(&self) -> OTelSdkResult {
+        self.0.shutdown()
+    }
+
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
+        self.0.shutdown_with_timeout(timeout)
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        self.0.set_resource(resource);
+    }
+}
