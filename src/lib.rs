@@ -47,6 +47,7 @@ pub enum Batching {
 }
 
 /// A configured Harness OTel pipeline. Wraps an `SdkTracerProvider`.
+#[derive(Debug)]
 pub struct HarnessOtel {
     provider: SdkTracerProvider,
 }
