@@ -221,8 +221,12 @@ Resource::builder()
 ### Default Pipeline
 
 ```
-spans → SpanAttributesProcessor → BatchSpanProcessor → OtlpHttpExporter
+spans → SpanAttributesProcessor → [consumer-supplied processors] → BatchSpanProcessor|SimpleSpanProcessor → OtlpExporter
 ```
+
+`SpanAttributesProcessor` only runs if `span_attribute()` was called at
+least once on the builder. Any processors registered via
+`with_span_processor()` run after it and before the batching stage.
 
 ### SpanAttributesProcessor
 
@@ -238,9 +242,16 @@ impl SpanProcessor for SpanAttributesProcessor {
 }
 ```
 
-### BatchSpanProcessor
+### Batching: BatchSpanProcessor vs. SimpleSpanProcessor
 
-Use standard `opentelemetry_sdk::trace::BatchSpanProcessor` with defaults. No custom retry logic — the OTel SDK handles retries internally.
+`with_batching()` selects between the standard
+`opentelemetry_sdk::trace::BatchSpanProcessor` (default) and
+`SimpleSpanProcessor`, both used with SDK defaults — no custom retry logic,
+the OTel SDK handles retries internally. See the `Batching` enum's doc
+comment in `src/lib.rs` for the tradeoff, in particular that
+`SimpleSpanProcessor::force_flush` is a no-op in this SDK version and
+cannot surface export failures — callers that need to detect failures
+(e.g. queue-for-retry logic) must use `Batching::Batch`.
 
 ---
 
@@ -292,20 +303,27 @@ let tracer = provider.tracer("component-name");
 ```
 harness-otel-sdk/
 ├── Cargo.toml
+├── examples/
+│   └── basic.rs
 ├── src/
-│   ├── lib.rs              # Re-exports, HarnessOtel builder
-│   ├── config.rs           # Config loading (env + YAML + builder)
+│   ├── lib.rs              # Re-exports, HarnessOtel/HarnessOtelBuilder, Batching — unit
+│   │                       # tests inline (#[cfg(test)] mod tests)
+│   ├── config.rs           # Config loading (env + YAML + builder) and validation —
+│   │                       # unit tests inline
 │   ├── resource.rs         # Resource attribute construction
-│   ├── exporter.rs         # Exporter factory (HTTP/gRPC selection)
+│   ├── exporter.rs         # Exporter factory (HTTP/gRPC selection, endpoint
+│   │                       # normalization) — unit tests inline
 │   ├── processors.rs       # SpanAttributesProcessor
-│   ├── validation.rs       # Endpoint/token validation rules
+│   ├── error.rs            # Error, Result
 │   └── control.rs          # ControlClient, Decision — behind `features = ["control"]`.
-│                           # NOT implemented yet; see "Control Plane" section.
-└── tests/
-    ├── config_test.rs
-    ├── validation_test.rs
-    └── integration_test.rs # Mock collector, verify span shape
+│                           # Warn-only; see "Control Plane" section.
 ```
+
+Endpoint/token validation lives in `Config::validate()` in `config.rs`
+rather than a separate `validation.rs` module. There is no top-level
+`tests/` directory — all tests are inline `#[cfg(test)]` modules next to
+the code they exercise; the mock-collector integration test lives in the
+`fork-gitai` consumer repo (`tests/common/mod.rs`), not in this crate.
 
 ### Dependencies
 
@@ -314,12 +332,17 @@ harness-otel-sdk/
 opentelemetry = "0.32"
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "grpc-tonic", "reqwest-blocking-client"] }
+tonic = { version = "0.14", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 
 [features]
 control = ["dep:ureq", "dep:serde_json"] # implemented — see src/control.rs
 ```
+
+`tonic` is a direct dependency (not just pulled in transitively via
+`opentelemetry-otlp`'s `grpc-tonic` feature) because `Protocol::OtlpGrpc`
+needs its channel types directly in `exporter.rs`.
 
 The exporter deliberately uses `reqwest-blocking-client`, not the async
 `reqwest-client`: the blocking client needs no runtime at all, so both
