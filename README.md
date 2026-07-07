@@ -72,11 +72,19 @@ let otel = HarnessOtel::builder()
   background thread. Fits long-running processes.
 - `Batching::Simple` exports each span synchronously as it ends, with no
   background thread. Fits short-lived processes (e.g. a one-shot CLI
-  invocation) that need every span flushed before exit.
+  invocation) that need export attempted before exit.
 
 Neither variant requires an async runtime — the exporter's HTTP client is
 blocking (`reqwest-blocking-client`), so both work from a plain synchronous
 `fn main()`.
+
+**Caveat:** `force_flush()` does not surface export failures under
+`Batching::Simple` — the underlying `SimpleSpanProcessor::force_flush` is a
+no-op that always returns success, regardless of whether the synchronous
+export inside `on_end()` actually succeeded. If your caller needs to detect
+and react to export failures (e.g. queue-for-retry logic), use
+`Batching::Batch`, whose `force_flush` blocks on the export and returns the
+real result.
 
 ## Configuration
 

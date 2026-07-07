@@ -38,7 +38,16 @@ use opentelemetry_sdk::trace::{SdkTracerProvider, ShouldSample, SpanProcessor};
 ///   flushed some time after `span.end()`.
 /// - `Simple` exports each span synchronously as it ends, with no
 ///   background thread. Fits short-lived processes (e.g. a one-shot CLI
-///   invocation) that need every span flushed before exit.
+///   invocation) that need export attempted before exit.
+///
+///   Caveat: [`HarnessOtel::force_flush`] does **not** surface export
+///   failures under `Simple`. The underlying `SimpleSpanProcessor`'s
+///   `force_flush` is a no-op that always returns `Ok(())`; the real
+///   result of the synchronous export inside `on_end()` is only
+///   debug-logged, never returned to the caller. Callers that need to
+///   detect and react to export failures (e.g. queue-for-retry logic)
+///   must use `Batch`, whose `force_flush` blocks on a worker thread and
+///   returns the real result.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Batching {
     #[default]
@@ -200,7 +209,10 @@ impl HarnessOtelBuilder {
 
     /// Choose how spans are handed off to the exporter. Defaults to
     /// `Batching::Batch`. Use `Batching::Simple` for short-lived processes
-    /// that need synchronous, guaranteed-before-exit export.
+    /// that need export attempted before exit — but see the caveat on
+    /// [`Batching`] about `force_flush` not surfacing export failures
+    /// under `Simple`; use `Batch` if the caller needs to detect and react
+    /// to export failures.
     pub fn with_batching(mut self, batching: Batching) -> Self {
         self.batching = batching;
         self
@@ -307,6 +319,51 @@ mod tests {
             flag.load(Ordering::SeqCst),
             "custom span processor's on_end should have run under Simple batching, \
              with no Tokio runtime present"
+        );
+    }
+
+    #[test]
+    fn simple_batching_force_flush_does_not_surface_export_failures() {
+        // Port 1 is reserved and nothing listens there, so every export
+        // attempt fails. This documents the current (surprising) behavior:
+        // `force_flush()` still reports success under `Batching::Simple`
+        // because `SimpleSpanProcessor::force_flush` is a no-op in this
+        // SDK version — see the caveat on `Batching::Simple`. Callers that
+        // need to detect export failures must use `Batching::Batch`
+        // instead (see `batch_force_flush_surfaces_export_failures` below).
+        let otel = HarnessOtel::builder()
+            .service_name("test")
+            .endpoint("http://127.0.0.1:1")
+            .secure(false)
+            .with_batching(Batching::Simple)
+            .build()
+            .expect("build should succeed with a valid local config");
+
+        let tracer = otel.tracer("test");
+        tracer.in_span("test-span", |_cx| {});
+
+        assert!(
+            otel.force_flush().is_ok(),
+            "known SDK limitation: Simple's force_flush cannot see the failed export"
+        );
+    }
+
+    #[test]
+    fn batch_force_flush_surfaces_export_failures() {
+        let otel = HarnessOtel::builder()
+            .service_name("test")
+            .endpoint("http://127.0.0.1:1")
+            .secure(false)
+            .with_batching(Batching::Batch)
+            .build()
+            .expect("build should succeed with a valid local config");
+
+        let tracer = otel.tracer("test");
+        tracer.in_span("test-span", |_cx| {});
+
+        assert!(
+            otel.force_flush().is_err(),
+            "Batch's force_flush should surface the real export failure"
         );
     }
 }
