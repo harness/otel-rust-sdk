@@ -26,3 +26,36 @@ pub fn build(service_name: &str, user_attributes: &HashMap<String, String>) -> R
 
     Resource::builder().with_attributes(attrs).build()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attributes_of(resource: &Resource) -> HashMap<String, String> {
+        resource
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn build_sets_sdk_attributes() {
+        let attrs = attributes_of(&build("svc", &HashMap::new()));
+
+        assert_eq!(attrs["service.name"], "svc");
+        assert_eq!(attrs["telemetry.sdk.name"], "harness_sdk");
+        assert_eq!(attrs["telemetry.sdk.language"], "rust");
+        assert_eq!(attrs["telemetry.sdk.version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn build_includes_user_attributes() {
+        let mut user = HashMap::new();
+        user.insert("deployment.region".to_string(), "us-east-1".to_string());
+
+        let attrs = attributes_of(&build("svc", &user));
+
+        assert_eq!(attrs["deployment.region"], "us-east-1");
+        assert_eq!(attrs["service.name"], "svc");
+    }
+}
